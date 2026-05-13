@@ -116,6 +116,8 @@ async def run_monitoring():
     
     results = []
     for pid, pdata in products.items():
+        if not isinstance(pdata, dict):
+            continue  # 跳过非商品配置（如注释字段）
         result = await monitor_product(pid, pdata)
         results.append(result)
     
