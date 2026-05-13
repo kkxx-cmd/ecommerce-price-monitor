@@ -1,0 +1,67 @@
+"""
+GitHub Actions 定时监控工作流
+每天自动爬取价格，有变化时发 Telegram 通知
+"""
+
+name: Price Monitor
+
+on:
+  schedule:
+    # 每天 9点、12点、18点、21点 爬取价格
+    # UTC时间，对应北京时间 17、20、凌晨2、5点
+    - cron: "0 9,12,18,21 * * *"
+  
+  # 也可手动触发
+  workflow_dispatch:
+    inputs:
+      products_file:
+        description: "products.json URL (可选，覆盖默认)"
+        required: false
+        type: string
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Download products config
+        if: github.event.inputs.products_file != ''
+        run: |
+          curl -sL "${{ github.event.inputs.products_file }}" -o data/products.json
+      
+      - name: Run price monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python main.py
+          # 有变化时发送汇总
+          python main.py --summary
+      
+      - name: Commit price data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 如果 data 目录有变化则提交
+          if [ -n "$(git status --porcelain data/)" ]; then
+            git add data/
+            git commit -m "📊 Update price data $(date +'%Y-%m-%d %H:%M')"
+            git push
+          else
+            echo "No data changes to commit"
+          fi
